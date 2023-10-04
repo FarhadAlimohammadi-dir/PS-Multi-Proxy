@@ -6,6 +6,8 @@ from colorama import Fore, Style
 from . import client  # Importing client from a module named "client"
 from urllib.parse import urlparse, parse_qs, urlencode
 import os
+import concurrent.futures  # Import for multi-threading
+
 
 yellow_color_code = "\033[93m"
 reset_color_code = "\033[0m"
@@ -20,6 +22,7 @@ HARDCODED_EXTENSIONS = [
     ".jpg", ".jpeg", ".png", ".gif", ".pdf", ".svg", ".json",
     ".css", ".js", ".webp", ".woff", ".woff2", ".eot", ".ttf", ".otf", ".mp4", ".txt"
 ]
+
 
 def has_extension(url, extensions):
     """
@@ -38,6 +41,7 @@ def has_extension(url, extensions):
 
     return extension in extensions
 
+
 def clean_url(url):
     """
     Clean the URL by removing redundant port information for HTTP and HTTPS URLs.
@@ -49,11 +53,27 @@ def clean_url(url):
         str: Cleaned URL.
     """
     parsed_url = urlparse(url)
-    
-    if (parsed_url.port == 80 and parsed_url.scheme == "http") or (parsed_url.port == 443 and parsed_url.scheme == "https"):
+
+    if (parsed_url.port == 80 and parsed_url.scheme == "http") or (
+            parsed_url.port == 443 and parsed_url.scheme == "https"):
         parsed_url = parsed_url._replace(netloc=parsed_url.netloc.rsplit(":", 1)[0])
 
     return parsed_url.geturl()
+
+def fetch_and_clean_for_domain(domain_detail):
+    """
+    Fetch and clean URLs for a specific domain.
+
+    Args:
+        domain_detail (tuple): A tuple containing domain, extensions, stream_output, proxy, placeholder.
+    """
+    domain, extensions, stream_output, proxy, placeholder = domain_detail
+    try:
+        fetch_and_clean_urls(domain, extensions, stream_output, proxy, placeholder)
+    except Exception as e:
+        logging.error(f"{Fore.RED}[ERROR]{Style.RESET_ALL} Error processing {domain}: {str(e)}")
+
+
 
 def clean_urls(urls, extensions, placeholder):
     """
@@ -78,7 +98,8 @@ def clean_urls(urls, extensions, placeholder):
             cleaned_urls.add(cleaned_url)
     return list(cleaned_urls)
 
-def fetch_and_clean_urls(domain, extensions, stream_output,proxy, placeholder):
+
+def fetch_and_clean_urls(domain, extensions, stream_output, proxy, placeholder):
     """
     Fetch and clean URLs related to a specific domain from the Wayback Machine.
 
@@ -92,16 +113,18 @@ def fetch_and_clean_urls(domain, extensions, stream_output,proxy, placeholder):
     """
     logging.info(f"{Fore.YELLOW}[INFO]{Style.RESET_ALL} Fetching URLs for {Fore.CYAN + domain + Style.RESET_ALL}")
     wayback_uri = f"https://web.archive.org/cdx/search/cdx?url={domain}/*&output=txt&collapse=urlkey&fl=original&page=/"
-    response = client.fetch_url_content(wayback_uri,proxy)
+    response = client.fetch_url_content(wayback_uri, proxy)
     urls = response.text.split()
-    
-    logging.info(f"{Fore.YELLOW}[INFO]{Style.RESET_ALL} Found {Fore.GREEN + str(len(urls)) + Style.RESET_ALL} URLs for {Fore.CYAN + domain + Style.RESET_ALL}")
-    
+
+    logging.info(
+        f"{Fore.YELLOW}[INFO]{Style.RESET_ALL} Found {Fore.GREEN + str(len(urls)) + Style.RESET_ALL} URLs for {Fore.CYAN + domain + Style.RESET_ALL}")
+
     cleaned_urls = clean_urls(urls, extensions, placeholder)
     logging.info(f"{Fore.YELLOW}[INFO]{Style.RESET_ALL} Cleaning URLs for {Fore.CYAN + domain + Style.RESET_ALL}")
-    logging.info(f"{Fore.YELLOW}[INFO]{Style.RESET_ALL} Found {Fore.GREEN + str(len(cleaned_urls)) + Style.RESET_ALL} URLs after cleaning")
+    logging.info(
+        f"{Fore.YELLOW}[INFO]{Style.RESET_ALL} Found {Fore.GREEN + str(len(cleaned_urls)) + Style.RESET_ALL} URLs after cleaning")
     logging.info(f"{Fore.YELLOW}[INFO]{Style.RESET_ALL} Extracting URLs with parameters")
-    
+
     results_dir = "results"
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)
@@ -114,15 +137,17 @@ def fetch_and_clean_urls(domain, extensions, stream_output,proxy, placeholder):
                 f.write(url + "\n")
                 if stream_output:
                     print(url)
-    
-    logging.info(f"{Fore.YELLOW}[INFO]{Style.RESET_ALL} Saved cleaned URLs to {Fore.CYAN + result_file + Style.RESET_ALL}")
+
+    logging.info(
+        f"{Fore.YELLOW}[INFO]{Style.RESET_ALL} Saved cleaned URLs to {Fore.CYAN + result_file + Style.RESET_ALL}")
+
 
 def main():
     """
     Main function to handle command-line arguments and start URL mining process.
     """
     log_text = """
-           
+
                                       _    __       
    ___  ___ ________ ___ _  ___ ___  (_)__/ /__ ____
   / _ \/ _ `/ __/ _ `/  ' \(_-</ _ \/ / _  / -_) __/
@@ -137,7 +162,7 @@ def main():
     parser.add_argument("-d", "--domain", help="Domain name to fetch related URLs for.")
     parser.add_argument("-l", "--list", help="File containing a list of domain names.")
     parser.add_argument("-s", "--stream", action="store_true", help="Stream URLs on the terminal.")
-    parser.add_argument("--proxy", help="Set the proxy address for web requests.",default=None)
+    parser.add_argument("--proxy", help="Set the proxy address for web requests.", default=None)
     parser.add_argument("-p", "--placeholder", help="placeholder for parameter values", default="FUZZ")
     args = parser.parse_args()
 
@@ -158,11 +183,22 @@ def main():
     extensions = HARDCODED_EXTENSIONS
 
     if args.domain:
-        fetch_and_clean_urls(domain, extensions, args.stream, args.proxy, args.placeholder)
+        domain_detail = (args.domain, extensions, args.stream, args.proxy, args.placeholder)
+        fetch_and_clean_for_domain(domain_detail)
 
-    if args.list:
-        for domain in domains:
-            fetch_and_clean_urls(domain, extensions, args.stream,args.proxy, args.placeholder)
+    elif args.list:
+        with open(args.list, "r") as f:
+            domains = [line.strip().lower().replace('https://', '').replace('http://', '') for line in f.readlines()]
+            domains = [domain for domain in domains if domain]  # Remove empty lines
+            domains = list(set(domains))  # Remove duplicates
+
+        # Wrap domain name, extension, and other args in a tuple and make a list of such tuples
+        domain_details = [(domain, extensions, args.stream, args.proxy, args.placeholder) for domain in domains]
+
+        # Set up a thread pool to fetch and clean URLs in parallel
+        with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
+            executor.map(fetch_and_clean_for_domain, domain_details)
+
 
 if __name__ == "__main__":
     main()
