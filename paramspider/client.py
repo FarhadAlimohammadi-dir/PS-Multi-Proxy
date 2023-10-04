@@ -44,7 +44,7 @@ def fetch_url_content(url,proxy):
     if proxy is not None:
         proxy = {
             'http': 'http://' + proxy,
-            'https': 'https://' + proxy,
+            'https': 'http://' + proxy,
             'ftp': 'ftp://' + proxy
         }
     for i in range(MAX_RETRIES):
