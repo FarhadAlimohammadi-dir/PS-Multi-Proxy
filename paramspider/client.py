@@ -42,9 +42,10 @@ def fetch_url_content(url,proxy):
     """
     user_agents = load_user_agents()
     if proxy is not None:
-        proxy={
-            'http':proxy,
-            'https':proxy
+        proxy = {
+            'http': 'http://' + proxy,
+            'https': 'https://' + proxy,
+            'ftp': 'ftp://' + proxy
         }
     for i in range(MAX_RETRIES):
         user_agent = random.choice(user_agents)
