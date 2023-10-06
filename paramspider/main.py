@@ -196,7 +196,7 @@ def main():
         domain_details = [(domain, extensions, args.stream, args.proxy, args.placeholder) for domain in domains]
 
         # Set up a thread pool to fetch and clean URLs in parallel
-        with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=200) as executor:
             executor.map(fetch_and_clean_for_domain, domain_details)
 
 
